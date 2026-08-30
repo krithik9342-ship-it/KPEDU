@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KP EDU - Advanced Notebook Studio</title>
+    <!-- Tailwind CSS for mobile responsive structures -->
+    <script src="https://jsdelivr.net"></script>
+    <script type="module">
+        import * as webllm from "https://esm.run";
+
+        let engine;
+        let activeSources = [];
+        const modelId = "Smollm2-360M-Instruct-q0f16-MLC"; 
+
+        // Mock System Databases
+        let usersDB = {
+            "testuser@gmail.com": { email: "testuser@gmail.com", name: "testuser", password: "123", avatar: "https://unsplash.com", securityKey: "A1B2C" }
+        }; 
+        let currentUser = null;
+        let generatedNotebookFiles = [
+            { id: "nb-1", userEmail: "testuser@gmail.com", name: "Engineering Architecture Principles", date: "Aug 28, 2026", sources: [{title: "architecture_notes.txt", content: "Scalable systems favor modular patterns."}] }
+        ];
+        let tempWizardSources = [];
+        let latestGeneratedOutputRaw = ""; // Stores most recent output data for code export trigger
+
+        // 🔐 Security Keys & Subscription Ledger
+        let authorizedSecurityKeys = {
+            "A1B2C": { assignedTo: "testuser@gmail.com", duration: "1 Month", rupeePaid: "500", status: "Active" }
+        };
+
+        // DOM App Views Nodes
+        const viewAuth = document.getElementById("view-auth");
+        const viewDashboard = document.getElementById("view-dashboard");
+        const viewWorkspace = document.getElementById("view-workspace");
+
+        // Auth Sub-Views
+        const formLogin = document.getElementById("form-login");
+        const formSignup = document.getElementById("form-signup");
+        const panelAdmin = document.getElementById("panel-admin");
+        const authMessage = document.getElementById("auth-message");
+
+        // Admin Management Nodes
+        const adminKeyInput = document.getElementById("admin-key-input");
+        const adminDurationInput = document.getElementById("admin-duration-input");
+        const adminRupeeInput = document.getElementById("admin-rupee-input");
+        const adminTableBody = document.getElementById("admin-table-body");
+        const adminAuditContainer = document.getElementById("admin-audit-container");
+
+        // Wizard & Input Modals
+        const wizardModal = document.getElementById("wizard-modal");
+        const wizardSourceList = document.getElementById("wizard-source-list");
+        const wizardYtInput = document.getElementById("wizard-yt-input");
+        const textModal = document.getElementById("text-modal");
+        const textPasteArea = document.getElementById("text-paste-area");
+        const textTitleInput = document.getElementById("text-title-input");
+
+        // Main Dashboard/Workspace Panels
+        const fileListContainer = document.getElementById("file-list-container");
+        const userHeaderName = document.getElementById("user-header-name");
+        const userHeaderPic = document.getElementById("user-header-pic");
+        const activeNotebookTitle = document.getElementById("active-notebook-title");
+        const statusDiv = document.getElementById("status");
+        const sourceList = document.getElementById("source-list");
+        const chatBox = document.getElementById("chat-box");
+        const userInput = document.getElementById("user-input");
+        const sendBtn = document.getElementById("send-btn");
+        const outputDisplay = document.getElementById("output-display");
+
+        // --- NAVIGATION ROUTER ---
+        function showView(viewId) {
+            viewAuth.classList.add("hidden");
+            viewDashboard.classList.add("hidden");
+            viewWorkspace.classList.add("hidden");
+            
+            if(viewId === 'auth') viewAuth.classList.remove("hidden");
+            if(viewId === 'dashboard') { renderDashboard(); viewDashboard.classList.remove("hidden"); }
+            if(viewId === 'workspace') viewWorkspace.classList.remove("hidden");
+        }
+
+        window.toggleAuthForm = (mode) => {
+            authMessage.innerText = "";
+            formLogin.classList.add("hidden");
+            formSignup.classList.add("hidden");
+            panelAdmin.classList.add("hidden");
+
+            if (mode === 'signup') formSignup.classList.remove("hidden");
+            else if (mode === 'login') formLogin.classList.remove("hidden");
+        };
+
+        // --- ADMIN SECURE PASSCODE GATEWAY ---
+        window.triggerAdminGatewayCheck = () => {
+            const secretPass = prompt("🔐 Enter Admin Alphanumeric Authentication Password Code:");
+            if (secretPass === "KP15909342") {
+                authMessage.innerText = "";
+                formLogin.classList.add("hidden");
+                formSignup.classList.add("hidden");
+                renderAdminDatabaseTable();
+                renderAdminAuditorDeck();
+                panelAdmin.classList.remove("hidden");
+            } else if (secretPass !== null) {
+                alert("❌ Unauthorized! Access Code verification sequence failed.");
+            }
+        };
+
+        // --- ADMIN SYSTEM SECURITY ACTIONS ---
+        function renderAdminDatabaseTable() {
+            adminTableBody.innerHTML = "";
+            Object.keys(authorizedSecurityKeys).forEach(key => {
+                const data = authorizedSecurityKeys[key];
+                const tr = document.createElement("tr");
+                tr.className = "border-b border-neutral-800 text-[11px] text-neutral-300";
+                tr.innerHTML = `
+                    <td class="p-2 font-mono font-bold text-amber-500">${key}</td>
+                    <td class="p-2 text-neutral-400 truncate max-w-[80px]">${data.assignedTo ? data.assignedTo : 'Unassigned'}</td>
+                    <td class="p-2 font-medium text-emerald-400">₹${data.rupeePaid}</td>
+                    <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[10px] ${data.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}">${data.duration}</span></td>
+                    <td class="p-2 text-right space-x-1 whitespace-nowrap">
+                        <button onclick="window.extendAdminSubscription('${key}')" class="bg-neutral-800 border border-neutral-700 hover:border-amber-500 text-amber-500 px-1.5 py-0.5 rounded text-[10px]">Edit</button>
+                        <button onclick="window.deleteAdminSecurityKey('${key}')" class="bg-red-950 border border-red-800 hover:border-red-500 text-red-400 px-1.5 py-0.5 rounded text-[10px]">Delete</button>
+                    </td>
+                `;
+                adminTableBody.appendChild(tr);
+            });
+        }
+
+        function renderAdminAuditorDeck() {
+            adminAuditContainer.innerHTML = "";
+            if(generatedNotebookFiles.length === 0) {
+                adminAuditContainer.innerHTML = `<p class="text-[11px] text-neutral-600 italic">No system source documents active across global user instances.</p>`;
+                return;
+            }
+
+            generatedNotebookFiles.forEach((file) => {
+                file.sources.forEach((src, sIdx) => {
+                    const block = document.createElement("div");
+                    block.className = "bg-neutral-950 p-3 border border-neutral-800 rounded-xl space-y-2";
+                    block.innerHTML = `
+                        <div class="flex justify-between items-start border-b border-neutral-900 pb-1.5 text-[10px]">
+                            <div>
+                                <p class="text-neutral-400 font-bold">📄 ${src.title}</p>
+                                <p class="text-neutral-600">Owner: ${file.userEmail} | Notebook: ${file.name}</p>
+                            </div>
+                            <button onclick="window.flagAndPurgeUserSource('${file.id}', ${sIdx})" class="bg-red-950/40 border border-red-900 hover:bg-red-900 text-red-400 text-[9px] font-bold px-2 py-0.5 rounded">🚨 Report & Purge</button>
+                        </div>
+                        <p class="text-[11px] text-neutral-400 font-mono line-clamp-3 bg-neutral-900/40 p-2 rounded border border-neutral-900/60">${src.content}</p>
+                    `;
+                    adminAuditContainer.appendChild(block);
+                });
+            });
+        }
+
+        window.handleCreateSecurityIdNode = () => {
+            const key = adminKeyInput.value.trim().toUpperCase();
+            const duration = adminDurationInput.value.trim() || "1 Month";
+            const rupee = adminRupeeInput.value.trim() || "0";
+            
+            const alphanumericRegex = /^(?=.*[a-zA-Z])(?=.*[0-9])[a-zA-Z0-9]{5}$/;
+            if (!alphanumericRegex.test(key)) {
+                alert("ID format error! Access IDs must be exactly 5 alphanumeric characters long and contain a mixture of both letters and numbers.");
+                return;
+            }
+            if (authorizedSecurityKeys[key]) {
+                alert("This security key sequence already exists within the database registry.");
+                return;
+            }
+
+            authorizedSecurityKeys[key] = { assignedTo: null, duration: duration, rupeePaid: rupee, status: "Active" };
+            
+            adminKeyInput.value = "";
+            adminDurationInput.value = "";
+            adminRupeeInput.value = "";
+            renderAdminDatabaseTable();
+        };
+
+        window.extendAdminSubscription = (key) => {
+            const nextDuration = prompt("Specify Subscription Duration Limit (or type 'Expired' to lock user):", authorizedSecurityKeys[key].duration);
+            if (nextDuration === null) return;
+
+            const extraRupee = prompt("Update Settled Rupee Collection Amount:", authorizedSecurityKeys[key].rupeePaid);
